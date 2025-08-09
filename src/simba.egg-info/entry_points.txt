@@ -1,0 +1,2 @@
+[console_scripts]
+simba = simba.cli.main:app

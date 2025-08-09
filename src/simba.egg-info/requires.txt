@@ -1,0 +1,12 @@
+torch>=2.2
+torchvision>=0.17
+numpy
+pandas
+scipy
+geopandas>=0.14
+shapely>=2.0
+scikit-learn
+matplotlib
+tqdm
+pyyaml
+typer>=0.12.0

@@ -1,0 +1,6 @@
+*.csv
+*.json
+*.ipynb
+artifacts
+.ipynb_checkpoints/
+.venv/
