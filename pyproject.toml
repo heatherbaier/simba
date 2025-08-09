@@ -18,6 +18,9 @@ dependencies = [
   "scipy",
   "geopandas",
   "shapely",
+  "rasterio",
+  "rioxarray",
+  "scikit-learn",
   "scikit-learn",
   "matplotlib",
   "tqdm",
@@ -25,6 +28,10 @@ dependencies = [
   "typer",
   "haversine"
 ]
+
+
+   
+
 
 [project.scripts]
 simba = "simba.cli.main:app"
