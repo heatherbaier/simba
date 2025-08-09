@@ -294,6 +294,7 @@ class SimbaJSONDataset(Dataset):
                                   torch.zeros(self.max_neighbors - n, dtype=torch.float32)])
             out["neighbor_images"] = torch.stack(n_imgs, dim=0)
             out["neighbor_mask"] = mask
+            out["image_name"] = img_path
     
         return out
 

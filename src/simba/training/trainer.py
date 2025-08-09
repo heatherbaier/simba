@@ -15,6 +15,7 @@ class TrainConfig:
     ckpt_name: str = f"model.torch"
 
 class Trainer:
+    
     def __init__(self, model_wrapper: BaseModelWrapper, dataset_adapter: BaseDatasetAdapter, cfg: TrainConfig):
         self.mw = model_wrapper
         self.ds = dataset_adapter
@@ -23,7 +24,26 @@ class Trainer:
         self.opt = torch.optim.AdamW(self.net.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         self.scaler = torch.cuda.amp.GradScaler(enabled=cfg.amp)
 
+        val_names = []
+        for b in self.ds.val_loader():
+            vn = v["image_name"]
+            [val_names.append(_) for _ in vn]
+        
+        
+
+        # Write validation indices to file
+        with open(f"{self.cfg.ckpt_dir}/val_indices.txt", "w") as val_file:
+            val_file.write('\n'.join(map(str, val_names)))           
+
+
+    
+
     def fit(self) -> None:
+
+
+
+
+        
 
         path = os.path.join(self.cfg.ckpt_dir)#, self.cfg.ckpt_name)
         
