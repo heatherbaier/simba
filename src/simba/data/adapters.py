@@ -323,8 +323,10 @@ class JSONGeoAdapter(BaseDatasetAdapter):
         n = len(full)
         idxs = list(range(n))
         random.Random(seed).shuffle(idxs)
-        n_train = int(split[0]*n)
-        n_val   = int(split[1]*n)
+        # n_train = int(split[0]*n)
+        # n_val   = int(split[1]*n)
+        n_train = 16
+        n_val = 8
         train_idx = idxs[:n_train]
         val_idx   = idxs[n_train:n_train+n_val]
         test_idx  = idxs[n_train+n_val:]

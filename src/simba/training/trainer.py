@@ -73,7 +73,7 @@ class Trainer:
                 pbar.set_postfix(loss=float(loss))
                 running_val_loss += loss.item()
 
-            with open(f"{save_dir}/records.txt", "a") as f:
+            with open(f"{path}/records.txt", "a") as f:
                 f.write('{} Loss: {:.4f}\n'.format("Training", running_train_loss / len(self.ds.train_loader())))
                 f.write('{} Loss: {:.4f}\n'.format("Validation", running_val_loss / len(self.ds.val_loader())))
 
