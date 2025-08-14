@@ -21,6 +21,7 @@ src/simba/explain/perturbations.py
 src/simba/explain/simba.py
 src/simba/explain/simba_explainer.py
 src/simba/models/__init__.py
+src/simba/models/coordRegressor.py
 src/simba/models/resnet18.py
 src/simba/models/tang2015.py
 src/simba/models/utils.py
