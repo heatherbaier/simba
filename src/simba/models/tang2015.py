@@ -115,33 +115,45 @@ class Tang2015Classifier(BaseModelWrapper):
 
     def load(self, path: str) -> None:
         ckpt = torch.load(path, map_location="cpu")
-        sd = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+        sd = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
 
-        # Strip 'ctx.' from start of any keys
-        new_state_dict = {}
-        for k, v in sd.items():
-            if k.startswith("ctx."):
-                new_state_dict[k[len("ctx."):]] = v
-            else:
-                new_state_dict[k] = v
+        # print(sd.keys())
+
+        # print(self.net.state_dict().keys())
+
+
+        # # Strip 'ctx.' from start of any keys
+        # new_state_dict = {}
+        # for k, v in sd.items():
+        #     if k.startswith("ctx."):
+        #         new_state_dict[k[len("ctx."):]] = v
+        #     else:
+        #         new_state_dict[k] = v
 
         # Build fresh net with current output size (e.g., regression: 1)
         if self.net is None:
             self.net = ImageGPSContextNet(num_classes=self.num_classes)
-    
-        # Filter: only load params that exist AND have the same shape
-        model_sd = self.net.state_dict()
-        filtered = {}
-        skipped = []
-        for k, v in new_state_dict.items():
-            if k in model_sd and model_sd[k].shape == v.shape:
-                filtered[k] = v
-            else:
-                skipped.append(k)
+
+
+        # print(self.net.state_dict().keys())
+
+
+        # dasgfsa
+
+        
+        # # Filter: only load params that exist AND have the same shape
+        # model_sd = self.net.state_dict()
+        # filtered = {}
+        # skipped = []
+        # for k, v in new_state_dict.items():
+        #     if k in model_sd and model_sd[k].shape == v.shape:
+        #         filtered[k] = v
+        #     else:
+        #         skipped.append(k)
     
         # Load matching weights; leave the rest (like classifier.*) randomly initialized
-        self.net.load_state_dict(filtered, strict=False)
+        self.net.load_state_dict(sd, strict=False)
     
-        # (Optional) print a tiny report so you know what got skipped
-        if skipped:
-            print(f"[SIMBA] Skipped {len(skipped)} keys (shape/name mismatch), e.g.: {skipped[:5]}")
+        # # (Optional) print a tiny report so you know what got skipped
+        # if skipped:
+        #     print(f"[SIMBA] Skipped {len(skipped)} keys (shape/name mismatch), e.g.: {skipped[:5]}")

@@ -4,3 +4,4 @@
 artifacts
 .ipynb_checkpoints/
 .venv/
+tmp_school_data

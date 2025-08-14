@@ -197,6 +197,12 @@ class SimbaJSONDataset(Dataset):
         img_size: Tuple[int,int] = (224,224),
         normalize: bool = True,
         seed: int = 1337,
+        # NEW: control augmentation strength & mode
+        train: bool = True,
+        augment: bool = True,
+        use_random_resized_crop: bool = False,  # set True only if changing FOV is OK
+        validate: bool = False,
+        ckpt_dir: Optional[str] = None,
     ):
         super().__init__()
         self.root = root_dir
@@ -218,44 +224,82 @@ class SimbaJSONDataset(Dataset):
         if self.dups_index is not None:
             keys &= set(self.dups_index)
         self.items = sorted(keys)
+
+
+        print(self.items[0:5])
+
+        print(len(self.items))
+
+
+        
+        
                 
         if len(self.items) == 0:
-            # keep your helpful error, but clarify the new hint
             raise ValueError(
                 "No overlapping base keys across ys/coords (and dups). "
                 f"ys={len(self.ys)} coords={len(self.coords)} dups={'None' if self.dups_index is None else len(self.dups_index)}\n"
                 f"Example ys key: {next(iter(self.ys)) if self.ys else 'EMPTY'}\n"
                 f"Example coords key: {next(iter(self.coords)) if self.coords else 'EMPTY'}\n"
-                f"Hint: We now fall back to grouping neighbors from coords by basename root "
+                "Hint: We now fall back to grouping neighbors from coords by basename root "
                 "(clusterid_*.tiff). Ensure ys uses either clusterid_1.tiff or clusterid.tiff for the base."
             )
+        elif validate:
+            print("here in validate!!")
 
-        tf_list = [transforms.Resize(img_size), transforms.ToTensor()]
-        if normalize:
-            tf_list.append(transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]))
+            p = os.path.join(ckpt_dir, "test_indices.txt")
+            with open(p, "r") as f:
+                test_names = f.read().splitlines()
+                self.items = list(set(self.items) & set(test_names))
+
+            print(len(self.items))
+
+        # -------------------------------
+        # Transforms (train vs. val/test)
+        # -------------------------------
+        # Base resize or crop
+        if train and augment:
+            resize_or_crop = (
+                transforms.RandomResizedCrop(
+                    img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)
+                ) if use_random_resized_crop else transforms.Resize(img_size)
+            )
+            tf_list = [
+                resize_or_crop,
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomVerticalFlip(p=0.5),
+                transforms.RandomRotation(degrees=20),  # small rotations, keep content
+                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05),
+                transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.5))], p=0.2),
+                transforms.ToTensor(),
+            ]
+            if normalize:
+                tf_list.append(transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]))
+            # tensor-only erasing last
+            tf_list.append(transforms.RandomErasing(p=0.25, scale=(0.02, 0.08), ratio=(0.3, 3.3)))
+        else:
+            # deterministic/eval pipeline
+            tf_list = [
+                transforms.Resize(img_size),
+                transforms.ToTensor(),
+            ]
+            if normalize:
+                tf_list.append(transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]))
+
         self.tf = transforms.Compose(tf_list)
 
         if split_indices is not None:
             self.items = [self.items[i] for i in split_indices]
 
         random.seed(seed)
+        # Optional: for reproducibility of tensor-level ops like RandomErasing
+        try:
+            import torch
+            torch.manual_seed(seed)
+        except Exception:
+            pass
 
     def __len__(self) -> int:
         return len(self.items)
-
-    # def _neighbors_for(self, base_rel: str) -> List[str]:
-    #     assert self.dups is not None
-    #     entry = self.dups[base_rel]
-    #     if isinstance(entry, list):
-    #         return [os.path.join(self.root, p) for p in entry]
-    #     if isinstance(entry, int):
-    #         stem, ext = os.path.splitext(base_rel)
-    #         return [os.path.join(self.root, f"{stem}_{i}{ext}") for i in range(1, entry+1)]
-    #     # default to 1..max_neighbors by suffix if format unknown
-    #     stem, ext = os.path.splitext(base_rel)
-    #     return [os.path.join(self.root, f"{stem}_{i}{ext}") for i in range(1, self.max_neighbors+1)]
-
-# --- replace _neighbors_for and its usage ---
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         rel = self.items[idx]
@@ -267,7 +311,7 @@ class SimbaJSONDataset(Dataset):
     
         y = self.ys[rel]
         try:
-            y_float = float(y)  # handles "3.0", 3, np.float, etc.
+            y_float = float(y)
         except Exception:
             raise ValueError(f"Label for {rel} must be a float, got {y!r}")
         label = torch.tensor(y_float, dtype=torch.float32)
@@ -290,14 +334,15 @@ class SimbaJSONDataset(Dataset):
                 pad = torch.zeros_like(n_imgs[0])
                 if n < self.max_neighbors:
                     n_imgs += [pad for _ in range(self.max_neighbors - n)]
-                mask = torch.cat([torch.ones(n, dtype=torch.float32),
-                                  torch.zeros(self.max_neighbors - n, dtype=torch.float32)])
+                mask = torch.cat([
+                    torch.ones(n, dtype=torch.float32),
+                    torch.zeros(self.max_neighbors - n, dtype=torch.float32)
+                ])
             out["neighbor_images"] = torch.stack(n_imgs, dim=0)
             out["neighbor_mask"] = mask
             out["image_name"] = img_path
     
         return out
-
 
 # ---------- adapter (build loaders) ----------
 
@@ -307,6 +352,7 @@ class JSONGeoAdapter(BaseDatasetAdapter):
         root_dir: str,
         ys_path: str,
         coords_path: str,
+        ckpt_dir: str,
         dup_path: Optional[str] = None,
         batch_size: int = 16,
         max_neighbors: int = 10,
@@ -323,11 +369,12 @@ class JSONGeoAdapter(BaseDatasetAdapter):
                                 img_size=img_size, normalize=normalize, seed=seed)
         n = len(full)
         idxs = list(range(n))
+        # idxs = list(range(52))
         random.Random(seed).shuffle(idxs)
-        # n_train = int(split[0]*n)
-        # n_val   = int(split[1]*n)
-        n_train = 16
-        n_val = 8
+        n_train = int(split[0]*n)
+        n_val   = int(split[1]*n)
+        # n_train = 32
+        # n_val = 20
         train_idx = idxs[:n_train]
         val_idx   = idxs[n_train:n_train+n_val]
         test_idx  = idxs[n_train+n_val:]
@@ -341,6 +388,14 @@ class JSONGeoAdapter(BaseDatasetAdapter):
         self._test  = SimbaJSONDataset(root_dir, ys_path, coords_path, dup_path,
                                        split_indices=test_idx, max_neighbors=max_neighbors,
                                        img_size=img_size, normalize=normalize, seed=seed)
+
+        # Write validation indices to file
+        with open(f"{ckpt_dir}/val_indices.txt", "w") as val_file:
+            val_file.write('\n'.join(map(str, self._val.items)))           
+
+        # Write validation indices to file
+        with open(f"{ckpt_dir}/test_indices.txt", "w") as test_file:
+            test_file.write('\n'.join(map(str, self._test.items)))     
 
         self.bs = batch_size
         self.shuffle_train = shuffle_train

@@ -1,6 +1,6 @@
 #!/bin/tcsh
 # Job name:
-#SBATCH --job-name=train_conn
+#SBATCH --job-name=simba_tang
 #
 # Number of nodes:
 #SBATCH --nodes=1
@@ -26,4 +26,4 @@ activate simba
 
 pip install -e .
 
-python3 -m simba.cli.main train --model tang2015 --dataset json --data-root /sciclone/geograd/heather_data/clean_dataset_jsons --prefix western_africa --with-neighbors --ckpt-dir /sciclone/geograd/heather_data/simba/artifacts/wa_v2/
+python3 -m simba.cli.main train --model tang2015 --dataset json --data-root /sciclone/geograd/heather_data/clean_dataset_jsons --prefix western_africa --with-neighbors --ckpt-dir /sciclone/geograd/heather_data/simba/artifacts/wa_wtransforms_v1 --epochs 200

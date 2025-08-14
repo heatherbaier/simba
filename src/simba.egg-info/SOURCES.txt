@@ -25,3 +25,4 @@ src/simba/models/resnet18.py
 src/simba/models/tang2015.py
 src/simba/models/utils.py
 src/simba/training/trainer.py
+src/simba/utils/utils.py

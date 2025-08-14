@@ -1,9 +1,11 @@
 import typer
-import torch
+import torch, tqdm, os
+import pandas as pd
 from ..core.registries import ModelRegistry, DatasetRegistry
 from ..training.trainer import Trainer, TrainConfig
 from ..explain import Simba
-from ..data.adapters import JSONGeoAdapter, resolve_json_paths
+from ..data.adapters import SimbaJSONDataset, JSONGeoAdapter, resolve_json_paths
+from ..utils.utils import *
 
 
 app = typer.Typer(help="SIMBA CLI")
@@ -31,6 +33,7 @@ def train(
             coords_path=coords,
             dup_path=dup,
             batch_size=batch_size,
+            ckpt_dir = ckpt_dir
         )
     else:
         ds = DatasetRegistry.get(dataset)()
@@ -44,6 +47,81 @@ def train(
 
     cfg = TrainConfig(epochs=epochs, lr=lr, ckpt_dir=ckpt_dir)
     Trainer(mw, ds, cfg).fit()
+
+
+
+@app.command()
+def validate(model: str = "tang2015",
+             dataset: str = "json",   # 'json' triggers generic loader
+             data_root: str = typer.Option("", help="Folder containing JSONs and images"),
+             prefix: str = typer.Option("", help="Dataset prefix, e.g., 'phl' or 'western_africa'"),
+             with_neighbors: bool = True,
+             ckpt_dir: str = "artifacts/checkpoints",
+             device = "cuda"):
+
+    mw = ModelRegistry.get(model)()#.build()
+
+    epoch, path = highest_epoch(ckpt_dir)
+    print(epoch, path)
+
+    
+    mw.load(path)
+    # Build dataset
+
+    # dsga
+    
+
+    if dataset == "json":
+        
+        if not data_root or not prefix:
+            raise typer.BadParameter("When dataset='json', you must pass --data-root and --prefix.")
+        ys, coords, dup = resolve_json_paths(data_root, prefix, with_neighbors=with_neighbors)
+        ds = SimbaJSONDataset(
+            root_dir=data_root,
+            ys_path=ys,
+            coords_path=coords,
+            dup_path=dup,
+            ckpt_dir = ckpt_dir,
+            validate = True,
+            
+        )
+    else:
+        ds = DatasetRegistry.get(dataset)()
+
+
+    mw.net = mw.net.to(device).eval()
+    
+
+    imnames, preds, labels = [], [], []
+    for c, batch in tqdm.tqdm(enumerate(ds), desc = "Validating"):
+
+        batch = {k: (v.to(device).unsqueeze(0) if hasattr(v, "to") else v) for k,v in batch.items()}
+
+        out = mw.forward(batch)
+        
+        # print(, batch["label"])
+
+        imnames.append(batch["image_name"])
+        preds.append(out.item())
+        labels.append(batch["label"].item())
+
+        # print(imnames, preds, labels)
+        
+        
+        if c % 10:
+            df = pd.DataFrame()
+            df["name"], df["pred"], df["label"] = imnames, preds, labels
+            df.to_csv(os.path.join(ckpt_dir, f"epoch{epoch}_preds.csv"))
+
+        df = pd.DataFrame()
+        df["name"], df["pred"], df["label"] = imnames, preds, labels
+        df.to_csv(os.path.join(ckpt_dir, f"epoch{epoch}_preds.csv"))  
+
+        # print(c, len(ds), end = "\r")
+        
+        
+        # print(i)
+        # break
 
 
 @app.command()
@@ -83,6 +161,11 @@ def explain_instance(
 
     # Load model
     mw = ModelRegistry.get(model)()
+
+
+
+    
+    
     mw.load(model_ckpt)
 
     print(mw)

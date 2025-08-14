@@ -7,8 +7,8 @@ from ..core.base_dataset import BaseDatasetAdapter
 @dataclass
 class TrainConfig:
     epochs: int = 3
-    lr: float = 1e-3
-    weight_decay: float = 1e-4
+    lr: float = 3e-4
+    weight_decay: float = 1e-3
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     amp: bool = True
     ckpt_dir: str = "artifacts/checkpoints"
@@ -24,26 +24,10 @@ class Trainer:
         self.opt = torch.optim.AdamW(self.net.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
         self.scaler = torch.cuda.amp.GradScaler(enabled=cfg.amp)
 
-        val_names = []
-        for b in self.ds.val_loader():
-            vn = v["image_name"]
-            [val_names.append(_) for _ in vn]
-        
-        
-
-        # Write validation indices to file
-        with open(f"{self.cfg.ckpt_dir}/val_indices.txt", "w") as val_file:
-            val_file.write('\n'.join(map(str, val_names)))           
-
 
     
 
     def fit(self) -> None:
-
-
-
-
-        
 
         path = os.path.join(self.cfg.ckpt_dir)#, self.cfg.ckpt_name)
         
