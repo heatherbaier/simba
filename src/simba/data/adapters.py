@@ -230,9 +230,6 @@ class SimbaJSONDataset(Dataset):
 
         print(len(self.items))
 
-
-        
-        
                 
         if len(self.items) == 0:
             raise ValueError(
@@ -317,6 +314,8 @@ class SimbaJSONDataset(Dataset):
         label = torch.tensor(y_float, dtype=torch.float32)
             
         out: Dict[str, Any] = {"image": img, "coords": coords, "label": label}
+
+        out["image_name"] = img_path
     
         if self.dups_index is not None:
             neigh_full = self.dups_index.get(rel, [])[: self.max_neighbors]
@@ -340,7 +339,6 @@ class SimbaJSONDataset(Dataset):
                 ])
             out["neighbor_images"] = torch.stack(n_imgs, dim=0)
             out["neighbor_mask"] = mask
-            out["image_name"] = img_path
     
         return out
 

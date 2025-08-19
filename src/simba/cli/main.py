@@ -6,6 +6,7 @@ from ..training.trainer import Trainer, TrainConfig
 from ..explain import Simba
 from ..data.adapters import SimbaJSONDataset, JSONGeoAdapter, resolve_json_paths
 from ..utils.utils import *
+from ..data.instance_index import *
 
 
 app = typer.Typer(help="SIMBA CLI")
@@ -59,20 +60,14 @@ def validate(model: str = "tang2015",
              ckpt_dir: str = "artifacts/checkpoints",
              device = "cuda"):
 
+    # Load trained model
     mw = ModelRegistry.get(model)()#.build()
-
     epoch, path = highest_epoch(ckpt_dir)
     print(epoch, path)
-
-    
     mw.load(path)
-    # Build dataset
 
-    # dsga
-    
-
+    # Build dataset    
     if dataset == "json":
-        
         if not data_root or not prefix:
             raise typer.BadParameter("When dataset='json', you must pass --data-root and --prefix.")
         ys, coords, dup = resolve_json_paths(data_root, prefix, with_neighbors=with_neighbors)
@@ -124,68 +119,294 @@ def validate(model: str = "tang2015",
         # break
 
 
-@app.command()
-def explain(model_ckpt: str = "artifacts/checkpoints/model.pt",
-           dataset: str = "toygeo",
-           delta_small: int = 250, delta_large: int = 1000,
-           n_batches: int = 5):
-    # load model & data
-    mw = ModelRegistry.get("from_ckpt")()
-    mw.load(model_ckpt)
-    ds = DatasetRegistry.get(dataset)()
-    expl = SimbaExplainer(mw, ds)
-    res = expl.global_sensitivity(deltas_m=(delta_small, delta_large), n_batches=n_batches)
-    typer.echo(res)
+# @app.command()
+# def explain(model_ckpt: str = "artifacts/checkpoints/model.pt",
+#            dataset: str = "toygeo",
+#            delta_small: int = 250, delta_large: int = 1000,
+#            n_batches: int = 5):
+#     # load model & data
+#     mw = ModelRegistry.get("from_ckpt")()
+#     mw.load(model_ckpt)
+#     ds = DatasetRegistry.get(dataset)()
+#     expl = SimbaExplainer(mw, ds)
+#     res = expl.global_sensitivity(deltas_m=(delta_small, delta_large), n_batches=n_batches)
+#     typer.echo(res)
+
+
+
+@app.command("explain")
+def explain(model: str = "tang2015",
+             dataset: str = "json",   # 'json' triggers generic loader
+             data_root: str = typer.Option("", help="Folder containing JSONs and images"),
+             prefix: str = typer.Option("", help="Dataset prefix, e.g., 'phl' or 'western_africa'"),
+             # with_neighbors: bool = True,
+             ckpt_dir: str = "artifacts/checkpoints",
+                with_neighbors: bool = typer.Option(
+                    True, "--with-neighbors/--no-neighbors",
+                    help="Include nearest-neighbor context in the explanation.",
+                    show_default=True,
+                ),
+                distances: str = "0.25,1,5",
+                index: int = 0,
+                out_csv: str = "artifacts/sensitivity_instance.csv",
+            device = "cuda"
+           ):
+
+
+    print("IN EXPLAIN")
+
+    # Load trained model
+    mw = ModelRegistry.get(model)()#.build()
+    epoch, path = highest_epoch(ckpt_dir)
+    print(epoch, path)
+    mw.load(path)
+
+    df = None
+
+    print("1")
+
+    # Build dataset    
+    if dataset == "json":
+        if not data_root or not prefix:
+            raise typer.BadParameter("When dataset='json', you must pass --data-root and --prefix.")
+        ys, coords, dup = resolve_json_paths(data_root, prefix, with_neighbors=with_neighbors)
+        ds = SimbaJSONDataset(
+            root_dir=data_root,
+            ys_path=ys,
+            coords_path=coords,
+            dup_path=dup,
+            ckpt_dir = ckpt_dir,
+            validate = True,
+            
+        )
+    else:
+        ds = DatasetRegistry.get(dataset)()
+
+
+    print("2")
+
+
+    mw.net = mw.net.to(device).eval()
+
+    distances_km = [float(x) for x in distances.split(",")]    
+
+    imnames, preds, labels = [], [], []
+    for c, batch in tqdm.tqdm(enumerate(ds), desc = "Explaining"):
+
+        batch = {k: (v.to(device) if hasattr(v, "to") else v) for k,v in batch.items()}
+
+        if not with_neighbors:
+            ami = None
+        else:
+            ami = [batch["neighbor_images"], batch["neighbor_mask"]]
+    
+        # Run analyzer
+        analyzer = Simba(model = mw.net,
+                         baseline_image = batch["image"],
+                         baseline_coords = batch["coords"].cpu().numpy(),
+                         label = batch["label"],
+                         additional_model_inputs = ami # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
+                        )  # uses GPU if available
+
+
+        if c == 0:
+            df = analyzer.run_instance_analysis(
+                # baseline_image=img,
+                # baseline_coords=crd,
+                distances_km=distances_km,
+                # neighbor_images=nb,
+                # neighbor_mask=nm,
+                # regression=True,  # your current models are regression
+            )
+            df["image_name"] = batch["image_name"]
+        else:
+            df_new = analyzer.run_instance_analysis(
+                # baseline_image=img,
+                # baseline_coords=crd,
+                distances_km=distances_km,
+                # neighbor_images=nb,
+                # neighbor_mask=nm,
+                # regression=True,  # your current models are regression
+            )
+            df_new["image_name"] = batch["image_name"]
+            # df.apend(df_new)
+            df = pd.concat([df, df_new], axis=0)
+
+
+
+        # if c > 5:
+
+        
+            # print(batch.keys())
+            
+        analyzer.export_results(df, out_csv)
+        typer.echo(f"Saved instance sensitivity to {out_csv}")
+        # break
+
+
+        
+
+        # batch = {k: (v.to(device).unsqueeze(0) if hasattr(v, "to") else v) for k,v in batch.items()}
+
+        # out = mw.forward(batch)
+        
+        # # print(, batch["label"])
+
+        # imnames.append(batch["image_name"])
+        # preds.append(out.item())
+        # labels.append(batch["label"].item())
+
+        # # print(imnames, preds, labels)
+        
+        
+        # if c % 10:
+        #     df = pd.DataFrame()
+        #     df["name"], df["pred"], df["label"] = imnames, preds, labels
+        #     df.to_csv(os.path.join(ckpt_dir, f"epoch{epoch}_preds.csv"))
+
+        # df = pd.DataFrame()
+        # df["name"], df["pred"], df["label"] = imnames, preds, labels
+        # df.to_csv(os.path.join(ckpt_dir, f"epoch{epoch}_preds.csv"))  
+
+        # # print(c, len(ds), end = "\r")
+        
+        
+        # # print(i)
+        # # break
 
 
 @app.command("explain-instance")  # hyphenated CLI name
 def explain_instance(
     model: str = "tang2015",
-    model_ckpt: str = typer.Option(..., "--model-ckpt", help="Path to trained checkpoint"),
+    # model_ckpt: str = typer.Option(..., "--model-ckpt", help="Path to trained checkpoint"),
+    ckpt_dir: str = "artifacts/checkpoints",
     dataset: str = "json",
     data_root: str = typer.Option("", help="Folder with JSONs & images"),
     prefix: str = typer.Option("", help="Dataset prefix, e.g., 'phl'"),
-    with_neighbors: bool = True,
+    with_neighbors: bool = typer.Option(
+        True, "--with-neighbors/--no-neighbors",
+        help="Include nearest-neighbor context in the explanation.",
+        show_default=True,
+    ),
     distances: str = "0.25,1,5",
     index: int = 0,
     out_csv: str = "artifacts/sensitivity_instance.csv",
+    device = "cuda"
 ):
-    # Build dataset (generic JSON mode or registered)
+
+    
+    # Build dataset    
     if dataset == "json":
         if not data_root or not prefix:
-            raise typer.BadParameter("When dataset='json', pass --data-root and --prefix.")
+            raise typer.BadParameter("When dataset='json', you must pass --data-root and --prefix.")
         ys, coords, dup = resolve_json_paths(data_root, prefix, with_neighbors=with_neighbors)
-        ds = JSONGeoAdapter(root_dir=data_root, ys_path=ys, coords_path=coords, dup_path=dup, batch_size=8)
+        ds = SimbaJSONDataset(
+            root_dir=data_root,
+            ys_path=ys,
+            coords_path=coords,
+            dup_path=dup,
+            ckpt_dir = ckpt_dir,
+            validate = False
+        )
     else:
-        ds = DatasetRegistry.get(dataset)()
+        ds = DatasetRegistry.get(dataset)()    
+
+    index = InstanceIndex(coords)
+
+    print(index.coords_deg)
+
+    lat, lon = 7.22417677648748, -10.721340976497585
+
+    distances_km = [float(x) for x in distances.split(",")]
+
+
+    nearby = index.nearest(lat, lon)
+
+    print("Nearby: ", nearby)
+    
+        # # Optionally limit per radius and pass to your SIMBA routine
+        # trimmed = {r: vals[:top_k_per_radius] for r, vals in nearby.items()}
+        # # Call your existing analysis for each set
+        # # e.g., run SIMBA on these neighbor images/coords
+        # return trimmed
+    
+    
+    
+    # Load trained model
+    mw = ModelRegistry.get(model)()#.build()
+    epoch, path = highest_epoch(ckpt_dir)
+    print(epoch, path)
+    mw.load(path)
+
+
+    # print(mw.net.state_dict().keys())
+
+    # print(mw.net.state_dict()["final.weight"])
+
+    # print(mw.net.state_dict()["final.bias"])
+    
+
+    # agadga
+
+
+    
+
+
+    print("Index: ", ds.items.index(nearby[0][0]))
+
+    
+    index = ds.items.index(nearby[0][0])
+
+    batch = ds[index]
+
+
+    batch = {k: (v.to(device) if hasattr(v, "to") else v) for k,v in batch.items()}
+
+        # out = mw.forward(batch)
+
+    # print(sample)
+
+
+    # dgkajgal
 
     # Load model
-    mw = ModelRegistry.get(model)()
-
+    # mw = ModelRegistry.get(model)()
 
 
     
     
-    mw.load(model_ckpt)
+    # mw.load(model_ckpt)
 
-    print(mw)
+    # print(mw)
 
     # Grab one sample from test set
-    sample = next(iter(ds.test_loader()))
-    img = sample["image"][index]
-    crd = sample["coords"][index]
-    nb  = sample.get("neighbor_images", None)
-    nm  = sample.get("neighbor_mask", None)
-    if nb is not None: nb = nb[index]
-    if nm is not None: nm = nm[index]
+    # sample = next(iter(ds.test_loader()))
+    # img = sample["image"][index]
+    # crd = sample["coords"][index]
+    # nb  = sample.get("neighbor_images", None)
+    # nm  = sample.get("neighbor_mask", None)
+    # if nb is not None: nb = nb[index]
+    # if nm is not None: nm = nm[index]
+
+    print("WN: ", with_neighbors)
+
+    # daga
+
+    if not with_neighbors:
+        ami = None
+    else:
+        ami = [batch["neighbor_images"], batch["neighbor_mask"]]
 
     # Run analyzer
     analyzer = Simba(model = mw.net,
-                     baseline_image = img,
-                     baseline_coords = crd,
-                     additional_model_inputs = [nb, nm] # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
+                     baseline_image = batch["image"],
+                     baseline_coords = batch["coords"].cpu().numpy(),
+                     label = batch["label"],
+                     additional_model_inputs = ami # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
                     )  # uses GPU if available
-    distances_km = [float(x) for x in distances.split(",")]
+
+    print("distances_km: ", distances_km)
+    
     df = analyzer.run_instance_analysis(
         # baseline_image=img,
         # baseline_coords=crd,

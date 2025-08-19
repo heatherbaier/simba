@@ -113,7 +113,7 @@ class CoordResNetRegressor(BaseModelWrapper):
         # Regression (L2). Targets can be [B] or [B,1].
         target = batch["label"].float().view(pred.size(0), -1)
         pred   = pred.view(pred.size(0), -1)
-        return F.mse_loss(pred, target)
+        return F.l1_loss(pred, target)
 
     @torch.no_grad()
     def predict(self, batch: Dict[str, Any]):

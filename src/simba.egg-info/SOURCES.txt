@@ -16,6 +16,7 @@ src/simba/core/base_model.py
 src/simba/core/registries.py
 src/simba/data/__init__.py
 src/simba/data/adapters.py
+src/simba/data/instance_index.py
 src/simba/explain/__init__.py
 src/simba/explain/perturbations.py
 src/simba/explain/simba.py

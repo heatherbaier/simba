@@ -28,7 +28,7 @@ class CoordMLP(nn.Module):
         return self.net(x)
 
 class VisualContextFixed(nn.Module):
-    def __init__(self, out_proj: int | None = 256, pretrained=True):
+    def __init__(self, out_proj = 256, pretrained = True):
         super().__init__()
         self.enc = ResNet18Embedding(pretrained=pretrained)
         d = self.enc.out_dim
