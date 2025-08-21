@@ -7,6 +7,8 @@ from ..explain import Simba
 from ..data.adapters import SimbaJSONDataset, JSONGeoAdapter, resolve_json_paths
 from ..utils.utils import *
 from ..data.instance_index import *
+from ..explain.utils import *
+
 
 
 app = typer.Typer(help="SIMBA CLI")
@@ -58,7 +60,8 @@ def validate(model: str = "tang2015",
              prefix: str = typer.Option("", help="Dataset prefix, e.g., 'phl' or 'western_africa'"),
              with_neighbors: bool = True,
              ckpt_dir: str = "artifacts/checkpoints",
-             device = "cuda"):
+             device = "cuda",
+             max_epoch = None):
 
     # Load trained model
     mw = ModelRegistry.get(model)()#.build()
@@ -275,10 +278,102 @@ def explain(model: str = "tang2015",
         # # break
 
 
+# @app.command("explain-instance")  # hyphenated CLI name
+# def explain_instance(
+#     model: str = "tang2015",
+#     # model_ckpt: str = typer.Option(..., "--model-ckpt", help="Path to trained checkpoint"),
+#     ckpt_dir: str = "artifacts/checkpoints",
+#     dataset: str = "json",
+#     data_root: str = typer.Option("", help="Folder with JSONs & images"),
+#     prefix: str = typer.Option("", help="Dataset prefix, e.g., 'phl'"),
+#     with_neighbors: bool = typer.Option(
+#         True, "--with-neighbors/--no-neighbors",
+#         help="Include nearest-neighbor context in the explanation.",
+#         show_default=True,
+#     ),
+#     distances: str = "0.25,1,5",
+#     index: int = 0,
+#     out_csv: str = "artifacts/sensitivity_instance.csv",
+#     device = "cuda"
+# ):
+
+#     # Build dataset    
+#     if dataset == "json":
+#         if not data_root or not prefix:
+#             raise typer.BadParameter("When dataset='json', you must pass --data-root and --prefix.")
+#         ys, coords, dup = resolve_json_paths(data_root, prefix, with_neighbors=with_neighbors)
+#         ds = SimbaJSONDataset(
+#             root_dir=data_root,
+#             ys_path=ys,
+#             coords_path=coords,
+#             dup_path=dup,
+#             ckpt_dir = ckpt_dir,
+#             validate = False
+#         )
+#     else:
+#         ds = DatasetRegistry.get(dataset)()    
+
+#     index = InstanceIndex(coords)
+
+#     print(index.coords_deg)
+
+#     lat, lon = 7.22417677648748, -10.721340976497585
+
+#     distances_km = [float(x) for x in distances.split(",")]
+
+#     nearby = index.nearest(lat, lon)
+
+#     print("Nearby: ", nearby)
+
+#     # Load trained model
+#     mw = ModelRegistry.get(model)()#.build()
+#     epoch, path = highest_epoch(ckpt_dir)
+#     print(epoch, path)
+#     mw.load(path)
+
+#     print("Index: ", ds.items.index(nearby[0][0]))
+
+#     index = ds.items.index(nearby[0][0])
+
+#     batch = ds[index]
+
+#     batch = {k: (v.to(device) if hasattr(v, "to") else v) for k,v in batch.items()}
+
+#     print("WN: ", with_neighbors)
+
+#     if not with_neighbors:
+#         ami = None
+#     else:
+#         ami = [batch["neighbor_images"], batch["neighbor_mask"]]
+
+#     # Run analyzer
+#     analyzer = Simba(model = mw.net,
+#                      baseline_image = batch["image"],
+#                      baseline_coords = batch["coords"].cpu().numpy(),
+#                      label = batch["label"],
+#                      additional_model_inputs = ami # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
+#                     )  # uses GPU if available
+
+#     print("distances_km: ", distances_km)
+    
+#     df = analyzer.run_instance_analysis(
+#         # baseline_image=img,
+#         # baseline_coords=crd,
+#         distances_km=distances_km,
+#         # neighbor_images=nb,
+#         # neighbor_mask=nm,
+#         # regression=True,  # your current models are regression
+#     )
+#     analyzer.export_results(df, out_csv)
+#     typer.echo(f"Saved instance sensitivity to {out_csv}")
+
+
+
+
+
 @app.command("explain-instance")  # hyphenated CLI name
 def explain_instance(
     model: str = "tang2015",
-    # model_ckpt: str = typer.Option(..., "--model-ckpt", help="Path to trained checkpoint"),
     ckpt_dir: str = "artifacts/checkpoints",
     dataset: str = "json",
     data_root: str = typer.Option("", help="Folder with JSONs & images"),
@@ -288,13 +383,11 @@ def explain_instance(
         help="Include nearest-neighbor context in the explanation.",
         show_default=True,
     ),
+    input_coords: str = "14.60827772362026,121.00946800454903",
     distances: str = "0.25,1,5",
-    index: int = 0,
-    out_csv: str = "artifacts/sensitivity_instance.csv",
     device = "cuda"
 ):
 
-    
     # Build dataset    
     if dataset == "json":
         if not data_root or not prefix:
@@ -311,86 +404,27 @@ def explain_instance(
     else:
         ds = DatasetRegistry.get(dataset)()    
 
+    # Create ball-tree for looking up input coordinates
     index = InstanceIndex(coords)
 
-    print(index.coords_deg)
+    # reformat input coordinates
+    input_coords = input_coords.split(",")
+    lat, lon = float(input_coords[0]), float(input_coords[1])
 
-    lat, lon = 7.22417677648748, -10.721340976497585
-
+    # Get dataset instances nearby
     distances_km = [float(x) for x in distances.split(",")]
-
-
     nearby = index.nearest(lat, lon)
 
-    print("Nearby: ", nearby)
-    
-        # # Optionally limit per radius and pass to your SIMBA routine
-        # trimmed = {r: vals[:top_k_per_radius] for r, vals in nearby.items()}
-        # # Call your existing analysis for each set
-        # # e.g., run SIMBA on these neighbor images/coords
-        # return trimmed
-    
-    
-    
     # Load trained model
     mw = ModelRegistry.get(model)()#.build()
     epoch, path = highest_epoch(ckpt_dir)
     print(epoch, path)
     mw.load(path)
 
-
-    # print(mw.net.state_dict().keys())
-
-    # print(mw.net.state_dict()["final.weight"])
-
-    # print(mw.net.state_dict()["final.bias"])
-    
-
-    # agadga
-
-
-    
-
-
-    print("Index: ", ds.items.index(nearby[0][0]))
-
-    
+    # Load batch
     index = ds.items.index(nearby[0][0])
-
     batch = ds[index]
-
-
     batch = {k: (v.to(device) if hasattr(v, "to") else v) for k,v in batch.items()}
-
-        # out = mw.forward(batch)
-
-    # print(sample)
-
-
-    # dgkajgal
-
-    # Load model
-    # mw = ModelRegistry.get(model)()
-
-
-    
-    
-    # mw.load(model_ckpt)
-
-    # print(mw)
-
-    # Grab one sample from test set
-    # sample = next(iter(ds.test_loader()))
-    # img = sample["image"][index]
-    # crd = sample["coords"][index]
-    # nb  = sample.get("neighbor_images", None)
-    # nm  = sample.get("neighbor_mask", None)
-    # if nb is not None: nb = nb[index]
-    # if nm is not None: nm = nm[index]
-
-    print("WN: ", with_neighbors)
-
-    # daga
 
     if not with_neighbors:
         ami = None
@@ -402,33 +436,24 @@ def explain_instance(
                      baseline_image = batch["image"],
                      baseline_coords = batch["coords"].cpu().numpy(),
                      label = batch["label"],
-                     additional_model_inputs = ami # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
+                     additional_model_inputs = ami, # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
+                     ckpt_dir = ckpt_dir
                     )  # uses GPU if available
 
     print("distances_km: ", distances_km)
+
+    analyzer.explain_instance(distances_km = distances_km)
     
-    df = analyzer.run_instance_analysis(
-        # baseline_image=img,
-        # baseline_coords=crd,
-        distances_km=distances_km,
-        # neighbor_images=nb,
-        # neighbor_mask=nm,
-        # regression=True,  # your current models are regression
-    )
-    analyzer.export_results(df, out_csv)
-    typer.echo(f"Saved instance sensitivity to {out_csv}")
-
-
-        # self,
-        # model,
-        # device = "cuda",
-        # baseline_image=None,
-        # baseline_coords=None,
-        # coord_names=("lat", "lon"),
-        # distance_fn=None,
-        # perturbation_scheme="small_local"
-
-
+    # df = analyzer.run_instance_analysis(distances_km = distances_km)
+    # analyzer.export_results(df)
+    
+    # # Get, save and print stats    
+    # metrics = analyzer.summarize_variogram_from_df(df)
+    # analyzer.plot_variogram_summary()
+    # res = analyzer.simba_variogram_with_null(distances_km)
+    # analyzer.print_null_variogram_summary(res)
+    # analyzer.export_results(df)
+    # typer.echo(f"Saved instance sensitivity metrics!")
 
 
 
