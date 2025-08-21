@@ -152,7 +152,8 @@ def explain(model: str = "tang2015",
                 distances: str = "0.25,1,5",
                 index: int = 0,
                 out_csv: str = "artifacts/sensitivity_instance.csv",
-            device = "cuda"
+            device = "cuda",
+            max_instances: int = None,
            ):
 
 
@@ -191,59 +192,77 @@ def explain(model: str = "tang2015",
 
     mw.net = mw.net.to(device).eval()
 
-    distances_km = [float(x) for x in distances.split(",")]    
+    distances_km = [float(x) for x in distances.split(",")]
 
-    imnames, preds, labels = [], [], []
-    for c, batch in tqdm.tqdm(enumerate(ds), desc = "Explaining"):
 
-        batch = {k: (v.to(device) if hasattr(v, "to") else v) for k,v in batch.items()}
-
-        if not with_neighbors:
-            ami = None
-        else:
-            ami = [batch["neighbor_images"], batch["neighbor_mask"]]
-    
         # Run analyzer
-        analyzer = Simba(model = mw.net,
-                         baseline_image = batch["image"],
-                         baseline_coords = batch["coords"].cpu().numpy(),
-                         label = batch["label"],
-                         additional_model_inputs = ami # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
-                        )  # uses GPU if available
+    analyzer = Simba(model = mw.net,
+                     baseline_image = None,
+                     baseline_coords = None,
+                     label = None,
+                     additional_model_inputs = None,# COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
+                     ckpt_dir = ckpt_dir
+                    )  # uses GPU if available
+
+    analyzer.explain_global_from_list(ds,
+                                      distances_km = distances_km,
+                                      max_instances = max_instances)
+
+    
+
+    # distances_km = [float(x) for x in distances.split(",")]    
+
+    # imnames, preds, labels = [], [], []
+    # for c, batch in tqdm.tqdm(enumerate(ds), desc = "Explaining"):
+
+    #     batch = {k: (v.to(device) if hasattr(v, "to") else v) for k,v in batch.items()}
+
+    #     if not with_neighbors:
+    #         ami = None
+    #     else:
+    #         ami = [batch["neighbor_images"], batch["neighbor_mask"]]
+    
+    #     # Run analyzer
+    #     analyzer = Simba(model = mw.net,
+    #                      baseline_image = batch["image"],
+    #                      baseline_coords = batch["coords"].cpu().numpy(),
+    #                      label = batch["label"],
+    #                      additional_model_inputs = ami # COME BACK AND MAKE THIS MORE FELXIBLE TO THE MODEL LATER ON!!!!
+    #                     )  # uses GPU if available
 
 
-        if c == 0:
-            df = analyzer.run_instance_analysis(
-                # baseline_image=img,
-                # baseline_coords=crd,
-                distances_km=distances_km,
-                # neighbor_images=nb,
-                # neighbor_mask=nm,
-                # regression=True,  # your current models are regression
-            )
-            df["image_name"] = batch["image_name"]
-        else:
-            df_new = analyzer.run_instance_analysis(
-                # baseline_image=img,
-                # baseline_coords=crd,
-                distances_km=distances_km,
-                # neighbor_images=nb,
-                # neighbor_mask=nm,
-                # regression=True,  # your current models are regression
-            )
-            df_new["image_name"] = batch["image_name"]
-            # df.apend(df_new)
-            df = pd.concat([df, df_new], axis=0)
+    #     if c == 0:
+    #         df = analyzer.run_instance_analysis(
+    #             # baseline_image=img,
+    #             # baseline_coords=crd,
+    #             distances_km=distances_km,
+    #             # neighbor_images=nb,
+    #             # neighbor_mask=nm,
+    #             # regression=True,  # your current models are regression
+    #         )
+    #         df["image_name"] = batch["image_name"]
+    #     else:
+    #         df_new = analyzer.run_instance_analysis(
+    #             # baseline_image=img,
+    #             # baseline_coords=crd,
+    #             distances_km=distances_km,
+    #             # neighbor_images=nb,
+    #             # neighbor_mask=nm,
+    #             # regression=True,  # your current models are regression
+    #         )
+    #         df_new["image_name"] = batch["image_name"]
+    #         # df.apend(df_new)
+    #         df = pd.concat([df, df_new], axis=0)
 
 
 
-        # if c > 5:
+    #     # if c > 5:
 
         
-            # print(batch.keys())
+    #         # print(batch.keys())
             
-        analyzer.export_results(df, out_csv)
-        typer.echo(f"Saved instance sensitivity to {out_csv}")
+    #     analyzer.export_results(df, out_csv)
+    #     typer.echo(f"Saved instance sensitivity to {out_csv}")
         # break
 
 

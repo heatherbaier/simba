@@ -9,6 +9,11 @@ import torch.nn.functional as f
 import matplotlib.pyplot as plt
 import os
 
+import tqdm
+
+import warnings
+warnings.filterwarnings('ignore')
+
 
 class Simba:
     def __init__(
@@ -34,7 +39,9 @@ class Simba:
         self.perturbation_scheme = perturbation_scheme
         self.additional_model_inputs = additional_model_inputs
         self.ckpt_dir = ckpt_dir
-        _, _, self.baseline_pred = self.get_gradients_wrt_inputs(self.baseline_image, torch.tensor(self.baseline_coords, dtype=torch.float32).unsqueeze(0))
+
+        if self.baseline_image is not None:
+            _, _, self.baseline_pred = self.get_gradients_wrt_inputs(self.baseline_image, torch.tensor(self.baseline_coords, dtype=torch.float32).unsqueeze(0))
         # print("BASELINE PREDICTION: ", self.baseline_pred)
 
     def perturb_coordinates(self, coords, distance_km):
@@ -66,6 +73,200 @@ class Simba:
         self.print_null_variogram_summary(res)
         self.export_results(df)
         typer.echo(f"Saved instance sensitivity metrics!")
+
+
+
+    def explain_global_from_list(
+        self,
+        instances,
+        distances_km,
+        agg="mean",                # "mean" | "median"
+        save_csv="artifacts/global_variogram.csv",
+        save_per_instance=False,   # also save each instance’s DF if True
+        max_instances=None,
+    ):
+        """
+        Global SIMBA summary over many instances.
+    
+        Parameters
+        ----------
+        instances : list of dict
+            Each dict must minimally contain:
+              {"image_path": <str>, "coord": (lat, lon)}
+            If your class keeps label/extra inputs internally, you don't need them here.
+        distances_km : iterable of float
+            Radii for perturbations (same as single-instance).
+        agg : str
+            Aggregator for global curve: "mean" or "median".
+        save_csv : str | None
+            Where to write the global table (per-distance aggregates).
+        save_per_instance : bool
+            If True, also export each instance df via your existing export_results(df).
+        max_instances : int | None
+            If set, subsample the first N instances for speed.
+    
+        Returns
+        -------
+        dict with:
+          global_df, global_curve (per-distance vector),
+          global_metrics (nugget/slope/sill/eff_range),
+          per_instance_metrics (list), per_instance_null (list)
+        """
+        import pandas as pd
+        import numpy as np
+        from copy import deepcopy
+    
+        # Storage
+        all_rows = []
+        per_instance_metrics = []
+        per_instance_null = []
+    
+        # Subsample if needed
+        # iterable = instances[:max_instances] if max_instances else instances
+
+        iterable = instances
+    
+        for idx, inst in tqdm.tqdm(enumerate(iterable), desc="Explaining global..."):
+
+
+            # print(inst.keys())
+
+            # agda
+
+            self.baseline_image = inst["image"]
+            self.baseline_coords = inst["coords"]
+            self.label = inst["label"]
+            
+            # --- set the instance on the fly ---
+            self.image_path = inst["image_name"]
+            self.coord = tuple(inst["coords"])
+            _, _, self.baseline_pred = self.get_gradients_wrt_inputs(self.baseline_image, torch.tensor(self.baseline_coords, dtype=torch.float32).unsqueeze(0))
+    
+            # Run your existing single-instance pieces
+            df_i = self.run_instance_analysis(distances_km=distances_km)   # must include distance_km & gamma
+            df_i = df_i.copy()
+            df_i["instance_id"] = idx
+            df_i["image_path"] = self.image_path
+            df_i["coord_lat"] = self.coord[0]
+            df_i["coord_lon"] = self.coord[1]
+    
+            if save_per_instance:
+                self.export_results(df_i)
+    
+            # Summaries (observed variogram stats from this instance)
+            m_i = self.summarize_variogram_from_df(df_i)   # expects distance_km + gamma
+            per_instance_metrics.append({"instance_id": idx, **m_i})
+    
+            # Null baseline for this instance
+            res_i = self.simba_variogram_with_null(distances_km=distances_km)
+            per_instance_null.append({"instance_id": idx, **res_i})
+    
+            all_rows.append(df_i)
+
+            if max_instances is not None:
+                if idx > max_instances:
+                    break
+            
+    
+        # --- Concatenate all instances ---
+        if not all_rows:
+            raise ValueError("No instances processed.")
+        big = pd.concat(all_rows, ignore_index=True)
+    
+        # --- Aggregate to a global curve (per distance) ---
+        # keep both mean and std so you can plot error bars
+        agg_fun = "mean" if agg == "mean" else "median"
+        # ensure we only aggregate numeric columns safely
+        global_agg = big.groupby("distance_km").agg(
+            gamma_mean=("gamma", "mean"),
+            gamma_std =("gamma", "std"),
+            gamma_median=("gamma", "median"),
+            coord_sens_mean=("coord_sens", "mean") if "coord_sens" in big.columns else ("gamma", "mean"),
+            coord_sens_std =("coord_sens", "std")  if "coord_sens" in big.columns else ("gamma", "std")
+        ).reset_index()
+    
+        # Choose which series is the "global curve" for metrics
+        ycol = "gamma_mean" if agg_fun == "mean" else "gamma_median"
+        df_for_metrics = global_agg.rename(columns={ycol: "gamma"})[["distance_km", "gamma"]].dropna()
+    
+        # Use your existing summarizer on the aggregated curve
+        global_metrics = self.summarize_variogram_from_df(df_for_metrics)
+    
+        # Optional: save global table
+        if save_csv:
+            filepath1 = os.path.join(self.ckpt_dir, f"sensitivity_index_global.csv")
+            filepath2 = os.path.join(self.ckpt_dir, f"sensitivity_index_globalbig.csv")
+            global_agg.to_csv(filepath1, index=False)
+            big.to_csv(filepath2, index=False)
+
+
+        # self.metrics = {
+        #                 "nugget": float(nugget),
+        #                 "slope0": float(slope0),
+        #                 "sill": sill,
+        #                 "eff_range_km": float(eff_range) if not np.isnan(eff_range) else np.nan,
+        #                 "distances": hs,
+        #                 "gammas": gs
+        #             }
+    
+        # return self.metrics
+
+        self.metrics = {
+                        "nugget": global_metrics['nugget'],
+                        "slope0": global_metrics['slope0'],
+                        "sill": global_metrics['sill'],
+                        "eff_range_km": global_metrics['eff_range_km'] if global_metrics['eff_range_km']==global_metrics['eff_range_km'] else float('nan'),
+                        "distances": distances_km,
+                        "gammas": global_agg["gamma_mean"]
+                    }
+
+        self.plot_variogram_summary(g = True)
+        
+        # Optional: quick plot using your existing plotter if it uses internal state
+        # If your plotter pulls from self, you can adapt it; otherwise
+        # write a small plotting helper that accepts (dist, mean, std).
+    
+        # --- Compact terminal + file summary ---
+        summary_lines = []
+        summary_lines.append("=" * 72)
+        summary_lines.append(" SIMBA Global Variogram Summary")
+        summary_lines.append("=" * 72)
+        summary_lines.append(f" Instances: {len(iterable)}")
+        summary_lines.append(f" Aggregation: {agg_fun.upper()} per distance over instances")
+        summary_lines.append(f" Nugget (global): {global_metrics['nugget']:.6g}")
+        summary_lines.append(f" Slope@0 (global): {global_metrics['slope0']:.6g}")
+        summary_lines.append(f" Sill   (global): {global_metrics['sill']:.6g}")
+        eff_range = global_metrics['eff_range_km']
+        summary_lines.append(f" Eff. range ~95% (global): {eff_range if eff_range==eff_range else float('nan'):.3f} km")
+        summary_lines.append("-" * 72)
+        summary_lines.append(" Distance  γ_mean   (±1 std)   |  γ_median")
+        
+        for _, r in global_agg.iterrows():
+            d = r["distance_km"]; gm = r["gamma_mean"]; gs = r["gamma_std"]; med = r["gamma_median"]
+            summary_lines.append(f"{d:8.2f}  {gm:8.6f} (±{(gs if not np.isnan(gs) else 0):.6f}) | {med:8.6f}")
+        
+        summary_lines.append("=" * 72)
+        
+        # Print to terminal
+        for line in summary_lines:
+            print(line)
+        
+        # Write to file
+        with open(os.path.join(self.ckpt_dir, "simba_global_variogram_summary.txt"), "w") as f:
+            for line in summary_lines:
+                f.write(line + "\n")
+
+    
+        return {
+            "global_df": global_agg,
+            "global_curve": df_for_metrics,
+            "global_metrics": global_metrics,
+            "per_instance_metrics": per_instance_metrics,
+            "per_instance_null": per_instance_null
+        }
+
+
+        
 
         
 
@@ -219,7 +420,7 @@ class Simba:
         Returns dict with nugget, slope0, sill, eff_range_km (+ a few extras).
         """
 
-        df = self.df.groupby(self.df["distance_km"]).mean().reset_index()
+        # df = self.df.groupby(self.df["distance_km"]).mean().reset_index()
         
         # 1) Clean & sort
         d = df[[h_col, gamma_col]].dropna().drop_duplicates().sort_values(h_col).to_numpy()
@@ -277,7 +478,7 @@ class Simba:
         return self.metrics
 
 
-    def plot_variogram_summary(self, title=None):
+    def plot_variogram_summary(self, title=None, g = False):
         metrics = self.metrics
         hs = metrics["distances"]; gs = metrics["gammas"]
         plt.figure(figsize=(5,3.5))
@@ -291,7 +492,11 @@ class Simba:
         if not np.isnan(metrics["eff_range_km"]):
             plt.axvline(metrics["eff_range_km"], linestyle="--", alpha=0.5)
         plt.tight_layout()
-        filepath = os.path.join(self.ckpt_dir, f"sensitivity_semivariogram_{self.baseline_coords}.png")
+
+        if g:
+            filepath = os.path.join(self.ckpt_dir, f"sensitivity_semivariogram_global.png")
+        else:
+            filepath = os.path.join(self.ckpt_dir, f"sensitivity_semivariogram_{self.baseline_coords}.png")
         plt.savefig(filepath)
         plt.show()
 
