@@ -304,7 +304,7 @@ class SimbaJSONDataset(Dataset):
         img = self.tf(_ensure_rgb(img_path))
             
         lon, lat = self.coords[rel]
-        coords = torch.tensor([lat, lon], dtype=torch.float32)
+        coords = torch.tensor([float(lat), float(lon)], dtype=torch.float32)
     
         y = self.ys[rel]
         try:

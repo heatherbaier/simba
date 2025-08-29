@@ -75,7 +75,6 @@ class Simba:
         typer.echo(f"Saved instance sensitivity metrics!")
 
 
-
     def explain_global_from_list(
         self,
         instances,
@@ -250,7 +249,7 @@ class Simba:
         # Print to terminal
         for line in summary_lines:
             print(line)
-        
+
         # Write to file
         with open(os.path.join(self.ckpt_dir, "simba_global_variogram_summary.txt"), "w") as f:
             for line in summary_lines:
@@ -407,7 +406,9 @@ class Simba:
         """
         Save results to CSV.
         """
-        filepath = os.path.join(self.ckpt_dir, f"sensitivity_index_{self.baseline_coords}.csv")
+        if not os.path.exists(os.path.join(self.ckpt_dir, "sensitivity_results")):
+            os.mkdir(os.path.join(self.ckpt_dir, "sensitivity_results"))
+        filepath = os.path.join(self.ckpt_dir, "sensitivity_results", f"sensitivity_index_{self.baseline_coords}.csv")
         results_df.to_csv(filepath, index=False)
 
     def summarize_variogram_from_df(self, df: pd.DataFrame, gamma_col="gamma", h_col="distance_km",
@@ -479,8 +480,22 @@ class Simba:
 
 
     def plot_variogram_summary(self, title=None, g = False):
+
         metrics = self.metrics
-        hs = metrics["distances"]; gs = metrics["gammas"]
+
+        temp = self.df.groupby(self.df["distance_km"]).mean().reset_index()
+        print(temp)
+        hs = temp["distance_km"]; gs = temp["gamma"]
+
+        
+
+        print(hs)
+        print("~~~~~~~~~~~~~~~~~~~")
+        print(gs)
+        
+        # hs = metrics["distances"]; gs = metrics["gammas"]
+        
+        plt.clf()
         plt.figure(figsize=(5,3.5))
         plt.plot(hs, gs, marker='o')
         plt.xlabel("Perturbation distance h (km)")
@@ -496,9 +511,11 @@ class Simba:
         if g:
             filepath = os.path.join(self.ckpt_dir, f"sensitivity_semivariogram_global.png")
         else:
-            filepath = os.path.join(self.ckpt_dir, f"sensitivity_semivariogram_{self.baseline_coords}.png")
+            if not os.path.exists(os.path.join(self.ckpt_dir, "local_sensitivity_variograms")):
+                os.mkdir(os.path.join(self.ckpt_dir, "local_sensitivity_variograms"))
+            filepath = os.path.join(self.ckpt_dir, "local_sensitivity_variograms", f"sensitivity_semivariogram_{self.baseline_coords}.png")        
         plt.savefig(filepath)
-        plt.show()
+        plt.clf()
 
 
     def summarize_variogram(self, threshold=0.002):
@@ -663,32 +680,50 @@ class Simba:
         null_q95 = results["null_q95"]
         pvals = results["p_per_distance"]
     
-        print("\n=== SIMBA Variogram + Null Baseline Summary ===\n")
-        print(f"Base prediction: {results['base_pred']:.4f}")
-        print(f"Nugget: {results['nugget']:.6f}")
-        print(f"Slope at origin: {results['slope0']:.6f}")
-        print(f"Sill: {results['sill']:.6f}")
-        print(f"Effective range (km): {results['eff_range_km']:.2f}")
-        print(f"Bootstrap reps: {results['n_boot']}, Samples per h: {results['samples_per_h']}")
-        print(f"Null jitter σ (km): {results['null_sigma_km']:.2f}\n")
-    
+        output_lines = []
+        
+        output_lines.append("\n=== SIMBA Variogram + Null Baseline Summary ===\n")
+        output_lines.append(f"Base prediction: {results['base_pred']:.4f}")
+        output_lines.append(f"Nugget: {results['nugget']:.6f}")
+        output_lines.append(f"Slope at origin: {results['slope0']:.6f}")
+        output_lines.append(f"Sill: {results['sill']:.6f}")
+        output_lines.append(f"Effective range (km): {results['eff_range_km']:.2f}")
+        output_lines.append(f"Bootstrap reps: {results['n_boot']}, Samples per h: {results['samples_per_h']}")
+        output_lines.append(f"Null jitter σ (km): {results['null_sigma_km']:.2f}\n")
+        
         header = f"{'Dist (km)':>10} | {'Obs γ':>10} | {'Null mean':>10} | {'Null q95':>10} | {'p-val':>8} | {'Flag':>6}"
-        print(header)
-        print("-" * len(header))
-    
+        output_lines.append(header)
+        output_lines.append("-" * len(header))
+        
         for j, h in enumerate(hs):
             obs = gamma_obs_mean[j]
             nmean = null_mean[j]
             nq95 = null_q95[j]
             p = pvals[j]
             flag = "SIG" if p < alpha else ""
-            print(f"{h:10.2f} | {obs:10.6f} | {nmean:10.6f} | {nq95:10.6f} | {p:8.3f} | {flag:>6}")
-    
-        print("\nInterpretation:")
-        print(f"- Rows marked 'SIG' mean observed semivariance > null baseline at α={alpha}.")
-        print("- This suggests the model’s predictions are more sensitive to coordinate perturbations")
-        print("  than would be expected from random GPS jitter at those distances.")
-        print("- Distances without SIG are within what could be explained by chance jitter.\n")
+            output_lines.append(f"{h:10.2f} | {obs:10.6f} | {nmean:10.6f} | {nq95:10.6f} | {p:8.3f} | {flag:>6}")
+        
+        output_lines.append("\nInterpretation:")
+        output_lines.append(f"- Rows marked 'SIG' mean observed semivariance > null baseline at α={alpha}.")
+        output_lines.append("- This suggests the model’s predictions are more sensitive to coordinate perturbations")
+        output_lines.append("  than would be expected from random GPS jitter at those distances.")
+        output_lines.append("- Distances without SIG are within what could be explained by chance jitter.\n")
+        
+        # Join into a single string
+        final_output = "\n".join(output_lines)
+        
+        # Print to console
+        print(final_output)
+
+
+        if not os.path.exists(os.path.join(self.ckpt_dir, "local_variogram_summaries")):
+            os.mkdir(os.path.join(self.ckpt_dir, "local_variogram_summaries"))
+        filepath = os.path.join(self.ckpt_dir, "local_variogram_summaries", f"vs_{self.baseline_coords}.txt")        
+
+        # Save to text file
+        with open(filepath, "w") as f:
+            f.write(final_output)
+
     
         
         

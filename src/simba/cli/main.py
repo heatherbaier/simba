@@ -19,7 +19,7 @@ def train(
     dataset: str = "json",   # 'json' triggers generic loader
     data_root: str = typer.Option("", help="Folder containing JSONs and images"),
     prefix: str = typer.Option("", help="Dataset prefix, e.g., 'phl' or 'western_africa'"),
-    with_neighbors: bool = True,
+    with_neighbors: bool = False,
     batch_size: int = 16,
     epochs: int = 2,
     lr: float = 1e-3,
@@ -62,6 +62,8 @@ def validate(model: str = "tang2015",
              ckpt_dir: str = "artifacts/checkpoints",
              device = "cuda",
              max_epoch = None):
+
+    with_neighbors = False
 
     # Load trained model
     mw = ModelRegistry.get(model)()#.build()
@@ -180,7 +182,7 @@ def explain(model: str = "tang2015",
             coords_path=coords,
             dup_path=dup,
             ckpt_dir = ckpt_dir,
-            validate = True,
+            validate = False,
             
         )
     else:
@@ -406,6 +408,10 @@ def explain_instance(
     distances: str = "0.25,1,5",
     device = "cuda"
 ):
+
+    
+
+    with_neighbors = False
 
     # Build dataset    
     if dataset == "json":
