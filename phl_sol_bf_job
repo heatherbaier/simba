@@ -22,4 +22,4 @@ source activate main
 cd /home/hbaier/projects/simba/src
 
 #Run the software/python script
-python3 -m simba.cli.main train --model biasField --dataset json --data-root /scratch/hbaier/data_jsons --prefix phl --ckpt-dir /home/hbaier/projects/simba/artifacts/phl_bs64_biasField_v1 --epochs 200 --batch-size 64
+python3 -m simba.cli.main train --model biasField --dataset json --data-root /scratch/hbaier/data_jsons --prefix phl --ckpt-dir /home/hbaier/projects/simba/artifacts/phl_bs64_biasField_v4 --epochs 200 --batch-size 64

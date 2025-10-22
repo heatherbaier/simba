@@ -232,17 +232,19 @@ class Simba:
         summary_lines.append("=" * 72)
         summary_lines.append(f" Instances: {len(iterable)}")
         summary_lines.append(f" Aggregation: {agg_fun.upper()} per distance over instances")
-        summary_lines.append(f" Nugget (global): {global_metrics['nugget']:.6g}")
-        summary_lines.append(f" Slope@0 (global): {global_metrics['slope0']:.6g}")
-        summary_lines.append(f" Sill   (global): {global_metrics['sill']:.6g}")
+        summary_lines.append(f" Nugget (global): {global_metrics['nugget']}")
+        summary_lines.append(f" Slope@0 (global): {global_metrics['slope0']}")
+        summary_lines.append(f" Sill   (global): {global_metrics['sill']}")
         eff_range = global_metrics['eff_range_km']
-        summary_lines.append(f" Eff. range ~95% (global): {eff_range if eff_range==eff_range else float('nan'):.3f} km")
+        summary_lines.append(f" Eff. range ~95% (global): {eff_range if eff_range==eff_range else float('nan')} km")
+
         summary_lines.append("-" * 72)
         summary_lines.append(" Distance  γ_mean   (±1 std)   |  γ_median")
         
         for _, r in global_agg.iterrows():
             d = r["distance_km"]; gm = r["gamma_mean"]; gs = r["gamma_std"]; med = r["gamma_median"]
-            summary_lines.append(f"{d:8.2f}  {gm:8.6f} (±{(gs if not np.isnan(gs) else 0):.6f}) | {med:8.6f}")
+            summary_lines.append(f"{d}  {gm} (±{(gs if not np.isnan(gs) else 0)}) | {med}")
+
         
         summary_lines.append("=" * 72)
         
@@ -570,7 +572,7 @@ class Simba:
         # coord_lon,
         # device="cuda",
         distances_km = None,
-        samples_per_h=2, # CHANGE THIS BACK TO 16!!
+        samples_per_h=16, # CHANGE THIS BACK TO 16!!
         # --- Null model params ---
         null_sigma_km=1.0,         # GPS noise scale (Rayleigh σ, in km)
         n_boot=200,                # number of bootstrap replicates
@@ -691,7 +693,8 @@ class Simba:
         output_lines.append(f"Bootstrap reps: {results['n_boot']}, Samples per h: {results['samples_per_h']}")
         output_lines.append(f"Null jitter σ (km): {results['null_sigma_km']:.2f}\n")
         
-        header = f"{'Dist (km)':>10} | {'Obs γ':>10} | {'Null mean':>10} | {'Null q95':>10} | {'p-val':>8} | {'Flag':>6}"
+        header = f"{'Dist (km)'} | {'Obs γ'} | {'Null mean'} | {'Null q95'} | {'p-val'} | {'Flag'}"
+
         output_lines.append(header)
         output_lines.append("-" * len(header))
         
@@ -701,7 +704,7 @@ class Simba:
             nq95 = null_q95[j]
             p = pvals[j]
             flag = "SIG" if p < alpha else ""
-            output_lines.append(f"{h:10.2f} | {obs:10.6f} | {nmean:10.6f} | {nq95:10.6f} | {p:8.3f} | {flag:>6}")
+            output_lines.append(f"{h} | {obs} | {nmean} | {nq95} | {p} | {flag}")
         
         output_lines.append("\nInterpretation:")
         output_lines.append(f"- Rows marked 'SIG' mean observed semivariance > null baseline at α={alpha}.")

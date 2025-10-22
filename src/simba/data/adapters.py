@@ -208,10 +208,12 @@ class SimbaJSONDataset(Dataset):
         self.root = root_dir
         self.max_neighbors = max_neighbors
         self.ys = _load_json(ys_path)
+        print("NUM YS: ", len(self.ys), ys_path)
         self.coords = _load_json(coords_path)
         self.dups_raw = _load_json(dup_path) if dup_path is not None else None
-        
+
         ys_keys = list(self.ys.keys())
+
         coords_keys = list(self.coords.keys())
         self.dups_index = _build_dups_index_by_basename(self.root, ys_keys, coords_keys, self.dups_raw)
         
@@ -225,12 +227,12 @@ class SimbaJSONDataset(Dataset):
             keys &= set(self.dups_index)
         self.items = sorted(keys)
 
-
         print(self.items[0:5])
 
         print(len(self.items))
 
-                
+        # gjhgk
+
         if len(self.items) == 0:
             raise ValueError(
                 "No overlapping base keys across ys/coords (and dups). "

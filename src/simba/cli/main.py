@@ -25,6 +25,13 @@ def train(
     lr: float = 1e-3,
     ckpt_dir: str = "artifacts/checkpoints",
 ):
+
+    saved_batch_size = batch_size
+    if model == "geoconv":
+        batch_size = 1
+
+    
+    print("WITH NEIGHBORS: ", with_neighbors)
     # Build dataset
     if dataset == "json":
         if not data_root or not prefix:
@@ -49,7 +56,7 @@ def train(
         raise typer.BadParameter("Tang2015 model requires neighbors. Use --with-neighbors true.")
 
     cfg = TrainConfig(epochs=epochs, lr=lr, ckpt_dir=ckpt_dir)
-    Trainer(mw, ds, cfg).fit()
+    Trainer(mw, ds, cfg, model, saved_batch_size).fit()
 
 
 
@@ -409,8 +416,6 @@ def explain_instance(
     device = "cuda"
 ):
 
-    
-
     with_neighbors = False
 
     # Build dataset    
@@ -424,13 +429,15 @@ def explain_instance(
             coords_path=coords,
             dup_path=dup,
             ckpt_dir = ckpt_dir,
-            validate = False
+            validate = False,
         )
     else:
         ds = DatasetRegistry.get(dataset)()    
 
     # Create ball-tree for looking up input coordinates
     index = InstanceIndex(coords)
+
+    
 
     # reformat input coordinates
     input_coords = input_coords.split(",")

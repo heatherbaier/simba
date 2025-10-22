@@ -22,4 +22,4 @@ source activate main
 cd /home/hbaier/projects/simba/src
 
 #Run the software/python script
-python3 -m simba.cli.main train --model coordConv --dataset json --data-root /scratch/hbaier/data_jsons --prefix western_africa --ckpt-dir /home/hbaier/projects/simba/artifacts/wa_bs64_coordConv_v2 --epochs 200 --batch-size 64
+python3 -m simba.cli.main train --model coordConv --dataset json --data-root /scratch/hbaier/data_jsons --prefix western_africa --ckpt-dir /home/hbaier/projects/simba/artifacts/wa_bs64_coordConv_v4 --epochs 200 --batch-size 64

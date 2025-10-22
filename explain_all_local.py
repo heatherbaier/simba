@@ -1,32 +1,46 @@
-from src.simba.explain import Simba
-from src.simba.cli.main import *
-
+import argparse
 import json
+from src.simba.explain import Simba
+from src.simba.cli.main import explain_instance
+import os
 
 
-# python3 -m simba.cli.main explain-instance   --model r18_wc --ckpt-dir /home/hbaier/projects/simba/artifacts/phl_bs32_r18_v2/   --dataset json   --data-root /scratch/hbaier/data_jsons   --prefix phl --distances 0.25,1,5,10,15,20 --no-neighbors --input-coords 15.119554775325298,120.83289931426896
+def main():
+    parser = argparse.ArgumentParser(description="Run SIMBA explain_instance for all schools.")
+    parser.add_argument("--ckpt-dir", type=str, required=True, help="Path to checkpoint directory")
+    parser.add_argument("--prefix", type=str, required=True, help="Prefix for output")
+    parser.add_argument("--model", type=str, required=True, help="Prefix for output")
+    args = parser.parse_args()
+
+    # load school coordinates
+    with open(f"/scratch/hbaier/data_jsons/{args.prefix}_coords.json", "r") as f:
+        phl_coords = json.load(f)
+
+    test_path = os.path.join(args.ckpt_dir, "test_indices.txt")
+    with open(test_path, "r") as f:
+        test_names = f.read().splitlines()
+    print("Num test: ", len(test_names))
+
+    print("Num 1: ", len(phl_coords))
+    phl_coords = {k:v for k,v in phl_coords.items() if k in test_names}
+    print("Num 2: ", len(phl_coords))
+
+    for imname, im_coords in phl_coords.items():
+        try:
+            coords_txt = f"{im_coords[1]},{im_coords[0]}"
+            print(coords_txt)
+            explain_instance(
+                model = args.model,
+                ckpt_dir=args.ckpt_dir,
+                dataset="json",
+                data_root="/scratch/hbaier/data_jsons",
+                prefix=args.prefix,
+                distances="0.25,1,2,5,10,15",
+                input_coords=coords_txt,
+            )
+        except Exception as e:
+            print("Error: ", e)
 
 
-with open("/scratch/hbaier/data_jsons/phl_coords.json", "r") as f:
-    phl_coords = json.load(f)
-
-# i = 0
-for imname,im_coords in phl_coords.items():
-    coords_txt = str(im_coords[1]) + "," + str(im_coords[0])
-    explain_instance(model = "biasField",
-                     ckpt_dir = "/home/hbaier/projects/simba/artifacts/phl_bs64_biasField_v1/",
-                     dataset = "json",
-                     data_root = "/scratch/hbaier/data_jsons",
-                     prefix = "phl",
-                     distances = "0.25,1,5,10,15,20",
-                     input_coords = coords_txt
-                     )
-
-    # i += 1
-
-    # if i > 4:
-    #     break
-
-
-
-
+if __name__ == "__main__":
+    main()
