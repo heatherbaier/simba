@@ -21,8 +21,13 @@ src/simba/explain/__init__.py
 src/simba/explain/perturbations.py
 src/simba/explain/simba.py
 src/simba/explain/simba_explainer.py
+src/simba/explain/utils.py
 src/simba/models/__init__.py
+src/simba/models/adp_r18.py
+src/simba/models/biasfield_resnet.py
 src/simba/models/coordRegressor.py
+src/simba/models/coordconv_resnet.py
+src/simba/models/geoconv.py
 src/simba/models/resnet18.py
 src/simba/models/tang2015.py
 src/simba/models/utils.py
