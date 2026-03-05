@@ -10,3 +10,4 @@ tmp_school_data
 *.pdf
 analysis/
 **__pycache__**
+archive
